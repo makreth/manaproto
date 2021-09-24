@@ -5,6 +5,10 @@ class GameField:
 
     class ReceivingContexts(Enum):
         ACTIVE_PLAYER_START_DISCARD = 1
+        ACTIVE_PLAYER_FREE_FIELD = 2
+        OPPOSING_PLAYER_RESPONSE = 3
+        ACTIVE_PLAYER_RESPONSE = 4
+        OPPOSING_PLAYER_LOST = 98
         ACTIVE_PLAYER_LOST = 99
     
     MAX_HAND_SIZE = 3
@@ -26,10 +30,13 @@ class GameField:
         if player_lost:
             self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_LOST
         else:
-            pass
+            self.await_play()
     
     def await_discard_choices(self):
         self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
+    
+    def await_play(self):
+        self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
     
     def get_active_player(self):
         return self.players[self.turn]
