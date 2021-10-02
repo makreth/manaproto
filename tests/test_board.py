@@ -1,4 +1,5 @@
 from core.game import Game, GameField, PlayerField, PlayerProfile, DeckList, TokenGroup
+import json
 import pytest
 
 class TestBoard:
@@ -11,7 +12,7 @@ class TestBoard:
 
     def test_board_smoke(self):
         test_field = GameField()
-        assert test_field.players == []
+        assert test_field.players == [None, None]
         assert test_field.token_group == TokenGroup()
         assert test_field.turn == 0
         assert test_field.receiving_context == None
@@ -49,3 +50,53 @@ class TestBoard:
         assert len(game.field.players) == 2
         assert game.field.players[0].deck == ["a1", "a1", "a2"]
         assert game.field.players[1].deck == ["b1", "b1", "b2"]
+    
+    def test_active_draw_smoke(self):
+        p1_dict = [
+            "p1",
+            {
+                "1a":2,
+                "1b":2
+            }
+        ]
+        p2_dict = [
+            "p2",
+            {
+                "2a":2,
+                "2b":2
+            }
+        ]
+        field = self.setup_game(p1_dict, p2_dict).field
+        field.start_turn()
+        assert len(field.players[0].hand) == 3
+        assert field.players[0].hand == ["1a", "1a", "1b"]
+        assert field.players[0].deck == ["1b"]
+
+        assert len(field.players[1].hand) == 0
+        assert field.players[1].deck == ["2a","2a","2b","2b"]
+
+    def test_start_discard_smoke(self):
+        p1_dict = [
+            "p1",{}
+        ]
+        p2_dict = [
+            "p2",{}
+        ]
+        field = self.setup_game(p1_dict, p2_dict).field
+        field.players[0].hand = ["d1", "d2", "d3", "d4"]
+        field.start_turn()
+        assert field.receiving_context == GameField.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
+        field.process_payload(json.dumps({"indices":[0]}))
+        assert field.players[0].hand == ["d2", "d3", "d4"]
+        assert field.players[0].discard == ["d1"]
+    
+    def test_active_loss_smoke(self):
+        p1_dict = [
+            "p1",{}
+        ]
+        p2_dict = [
+            "p2",{}
+        ]
+        field = self.setup_game(p1_dict, p2_dict).field
+        field.start_turn()
+        assert field.receiving_context == GameField.ReceivingContexts.ACTIVE_PLAYER_LOST
