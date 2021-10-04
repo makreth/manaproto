@@ -100,3 +100,37 @@ class TestBoard:
         field = self.setup_game(p1_dict, p2_dict).field
         field.start_turn()
         assert field.receiving_context == GameField.ReceivingContexts.ACTIVE_PLAYER_LOST
+    
+    def test_active_play_card_smoke(self):
+        p1_dict = [
+            "p1",{
+                "play1" : 1,
+                "1a" : 2,
+                "1b" : 2
+            }
+        ]
+
+        p2_dict = [
+            "p2",{
+            }
+        ]
+
+        field = self.setup_game(p1_dict, p2_dict).field
+        field.start_turn()
+        assert field.receiving_context == GameField.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
+        field.process_payload(json.dumps({
+            "start": {
+                "id" : 0,
+                "section" : "hand",
+                "index" : 0
+            },
+            "end" : {
+                "id" : 0,
+                "section" : "slot",
+                "index" : 1
+            },
+            "type" : "cast"
+        }))
+        assert len(field.players[0].hand) == 2
+        assert field.players[0].hand == ["1a", "1a"]
+        assert field.players[0].slots[1] == "play1"
