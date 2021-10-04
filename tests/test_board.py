@@ -8,7 +8,7 @@ class TestBoard:
         test_profile = PlayerProfile()
 
     def test_player_field_smoke(self):
-        test_player_field = PlayerField()
+        test_player_field = PlayerField(0)
 
     def test_board_smoke(self):
         test_field = GameField()
@@ -134,3 +134,4 @@ class TestBoard:
         assert len(field.players[0].hand) == 2
         assert field.players[0].hand == ["1a", "1a"]
         assert field.players[0].slots[1] == "play1"
+        assert field.casting_queue[0].card_name == "play1"

@@ -20,9 +20,10 @@ class CardSlot:
     class CardStates(Enum):
 
         INACTIVE = 0
-        DOWN = 1
-        UP = 2
-        TAP = 3
+        DOWN_LOCKED = 1
+        DOWN_PLAYABLE = 2
+        UP = 3
+        TAP = 4
 
     CMD_ALIASES = {
         "cast" : 2,
@@ -30,14 +31,15 @@ class CardSlot:
         "tap" : 3 
     }
 
-    def __init__(self, index):
+    def __init__(self, id, index):
+        self.side_id = id
         self.index = index
-        self.contents = None
+        self.card_name = None
         self.form = self.CardStates.INACTIVE
     
     def pop(self):
-        res = self.contents
-        self.contents = None
+        res = self.card_name
+        self.card_name = None
         self.form = self.CardStates.INACTIVE
         return res
     
@@ -46,27 +48,27 @@ class CardSlot:
         return cls.CMD_ALIASES[cmd_type]
 
     @property
-    def contents(self):
-        return self._contents
+    def card_name(self):
+        return self._card_name
 
     @property
     def form(self):
         return self._form
     
-    @contents.setter
-    def contents(self, content_form_tuple):
+    @card_name.setter
+    def card_name(self, content_form_tuple):
         if not content_form_tuple:
-            self._contents = None
+            self._card_name = None
             self.form = self.CardStates.INACTIVE
         else:
-            self._contents, self.form = content_form_tuple
+            self._card_name, self.form = content_form_tuple
     
     @form.setter
     def form(self, new_state):
         self._form = new_state
     
     def __eq__(self, other):
-        return self._contents == other
+        return self._card_name == other
 
 class DeckList:
     def __init__(self, init_data = None):
@@ -85,9 +87,10 @@ class DeckList:
         return list(self._data.keys())
 
 class PlayerField:
-    def __init__(self):
+    def __init__(self, id):
         self.token_group = TokenGroup()
-        self.slots = [CardSlot(0), CardSlot(1), CardSlot(2), CardSlot(3)]
+        self.side_id = id
+        self.slots = [CardSlot(id, 0), CardSlot(id, 1), CardSlot(id, 2), CardSlot(id, 3)]
         self.deck = []
         self.hand = []
         self.discard = []
@@ -152,33 +155,52 @@ class GameField:
         self.turn = 0
         self.reserve = self.STARTING_RESERVE
         self.receiving_context = None
+        self.casting_queue = []
 
         rc = self.ReceivingContexts
         self.context_processing = {
             rc.ACTIVE_PLAYER_START_DISCARD : self.execute_start_discard_on_active,
             rc.ACTIVE_PLAYER_FREE_FIELD : self.execute_active_play,
+            rc.OPPOSING_PLAYER_RESPONSE : self.execute_opp_response,
         }
 
     def process_payload(self, string_payload):
         dict_payload = json.loads(string_payload)
         self.context_processing[self.receiving_context](**dict_payload)
-
     
-    #TODO: morepayload validation
-    def execute_active_play(self, start=None, end=None, type=None):
-        start_selector = self.FieldSelector(**start)
-        end_selector = self.FieldSelector(**end)
+    def resolve_start_end_selectors(self, start_selector, end_selector, type):
         target_player = self.players[start_selector.id]
         if start_selector.section == "hand":
             card_to_play = target_player.hand.pop(start_selector.index)
+
         if start_selector.section == "slot":
             target_slot = target_player.slots[start_selector.index]
             card_to_play = target_slot.pop()
         
-        assert end_selector.section == "slot"
         dest_slot = target_player.slots[end_selector.index]
         form = CardSlot.convert_cmd_type_to_card_state(type)
-        dest_slot.contents = card_to_play, form
+        dest_slot.card_name = card_to_play, form
+        return dest_slot
+
+    #TODO: more payload validation
+    def execute_active_play(self, start=None, end=None, type=None):
+        start_selector = self.FieldSelector(**start)
+        end_selector = self.FieldSelector(**end)
+        dest_slot = self.resolve_start_end_selectors(start_selector, end_selector, type)
+        if type == "cast":
+            self.casting_queue.append(dest_slot)
+            self.await_opposing_response()
+    
+    def validate_active(self, start_selector, end_selector, type):
+        pass
+
+    def validate_response(self, start_selector, end_selector, type):
+        pass
+    
+    def execute_opp_response(self, start=None, end=None, type=None):
+        pass
+    
+
 
     def execute_start_discard_on_active(self, indices=None):
         acting_player = self.get_active_player()
@@ -202,6 +224,9 @@ class GameField:
     
     def await_play(self):
         self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
+    
+    def await_opposing_response(self):
+        self.receiving_context = self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE
     
     def get_active_player(self):
         return self.players[self.turn]
@@ -227,7 +252,7 @@ class Game:
 
     def setup_player(self, profile_num):
         target_profile = self.profiles[profile_num]
-        new_player_field = PlayerField()
+        new_player_field = PlayerField(profile_num)
         deck_list = target_profile.deck_list
         for card_name in deck_list.get_names():
             for _ in range(deck_list.get_count_from_name(card_name)):
