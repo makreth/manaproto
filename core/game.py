@@ -132,18 +132,18 @@ class GameField:
         OPPOSING_PLAYER_LOST = 98
         ACTIVE_PLAYER_LOST = 99
     
-    class FieldSelector:
+    class CardSelector:
 
-        POSSIBLE_SECTIONS = ["hand", "slot", "token"]
-        COMMUNE_ID = -1
+        POSSIBLE_SECTIONS = ["hand", "slot"]
 
         def __init__(self, id, section, index):
-            self.id = id
+            self.player_id = id
             self.section = section
             self.index = index
 
-            assert id == 0 or id == 1 or id == self.COMMUNE_ID
+            assert id == 0 or id == 1
             assert section in self.POSSIBLE_SECTIONS
+
         
     MAX_HAND_SIZE = 3
     STARTING_DRAW = 3
@@ -168,7 +168,7 @@ class GameField:
         dict_payload = json.loads(string_payload)
         self.context_processing[self.receiving_context](**dict_payload)
     
-    def resolve_start_end_selectors(self, start_selector, end_selector, type):
+    def resolve_card_selectors(self, start_selector, end_selector, type):
         target_player = self.players[start_selector.id]
         if start_selector.section == "hand":
             card_to_play = target_player.hand.pop(start_selector.index)
@@ -181,27 +181,22 @@ class GameField:
         form = CardSlot.convert_cmd_type_to_card_state(type)
         dest_slot.card_name = card_to_play, form
         return dest_slot
-
-    #TODO: more payload validation
-    def execute_active_play(self, start=None, end=None, type=None):
-        start_selector = self.FieldSelector(**start)
-        end_selector = self.FieldSelector(**end)
-        dest_slot = self.resolve_start_end_selectors(start_selector, end_selector, type)
+    
+    def play_card(self, start, end, type):
+        start_selector = self.CardSelector(**start)
+        end_selector = self.CardSelector(**end)
+        dest_slot = self.resolve_card_selectors(start_selector, end_selector, type)
         if type == "cast":
             self.casting_queue.append(dest_slot)
             self.await_opposing_response()
-    
-    def validate_active(self, start_selector, end_selector, type):
-        pass
 
-    def validate_response(self, start_selector, end_selector, type):
-        pass
+    #TODO: more payload validation
+    def execute_active_play(self, start=None, end=None, type=None):
+        self.play_card(start, end, type)
     
     def execute_opp_response(self, start=None, end=None, type=None):
-        pass
+        self.play_card(start, end, type)
     
-
-
     def execute_start_discard_on_active(self, indices=None):
         acting_player = self.get_active_player()
         assert len(indices) <= len(acting_player.hand) - self.MAX_HAND_SIZE
@@ -226,7 +221,10 @@ class GameField:
         self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
     
     def await_opposing_response(self):
-        self.receiving_context = self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE
+        if self.receiving_context == self.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD or self.receiving_context == self.ReceivingContexts.ACTIVE_PLAYER_RESPONSE:
+            self.receiving_context = self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE
+        elif self.receiving_context == self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE:
+            self.receiving_context == self.receiving_context.ACTIVE_PLAYER_RESPONSE
     
     def get_active_player(self):
         return self.players[self.turn]
