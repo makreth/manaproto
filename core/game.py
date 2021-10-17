@@ -169,7 +169,7 @@ class GameField:
         self.context_processing[self.receiving_context](**dict_payload)
     
     def resolve_card_selectors(self, start_selector, end_selector, type):
-        target_player = self.players[start_selector.id]
+        target_player = self.players[start_selector.player_id]
         if start_selector.section == "hand":
             card_to_play = target_player.hand.pop(start_selector.index)
 
