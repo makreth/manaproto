@@ -1,6 +1,7 @@
 from core.game import Game, GameField, PlayerField
 from core.profile import PlayerProfile, DeckList
 from core.components import TokenGroup
+import core.exceptions
 import json
 import pytest
 
@@ -140,7 +141,7 @@ class TestBoard:
         assert field.players[0].slots[1] == "play1"
         assert field.casting_queue[0].card_name == "play1"
     
-    def test_discard_too_few(self):
+    def test_discard_exceptions(self):
         p1_dict = [
             "p1",{
                 "k1" : 1,
@@ -155,13 +156,71 @@ class TestBoard:
             }
         ]
         field = self.setup_game(p1_dict, p2_dict).field
+        field.DEBUG_SYMBOL_NO_EXCEPTION_HANDLING = True
+        p1 = field.players[0]
+        p1.draw(8)
+        field.start_turn()
+        assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
+        with pytest.raises(core.exceptions.DiscardTooManyException):
+            field.process_payload(json.dumps({"indices":[0,1,2,3,4,5]}))
+        with pytest.raises(core.exceptions.DiscardIndicesInvalidException) as e:
+            field.process_payload(json.dumps({"indices":["a",12,-3,2]}))
+        assert e.value.invalid_indices == ["a",12,-3]
+        with pytest.raises(core.exceptions.DiscardTooFewException):
+            field.process_payload(json.dumps({"indices":[0]}))
+        assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
+        assert len(p1.discard) == 1
+        field.process_payload(json.dumps({"indices":[0,1,2,3,4]}))
+        assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
+        assert len(p1.discard) == 2
+    
+    def test_discard_too_many(self):
+        p1_dict = [
+            "p1",{
+                "k1" : 1,
+                "k2" : 2,
+                "k3" : 2,
+                "k4" : 2
+            }
+        ]
+
+        p2_dict = [
+            "p2",{
+            }
+        ]
+        field = self.setup_game(p1_dict, p2_dict).field
+        field.DEBUG_SYMBOL_NO_EXCEPTION_HANDLING = True
         p1 = field.players[0]
         p1.draw(5)
         field.start_turn()
         assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
-        field.process_payload(json.dumps({"indices":[0]}))
+        with pytest.raises(core.exceptions.DiscardTooManyException):
+            field.process_payload(json.dumps({"indices":[0,1,2,3]}))
         assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
-        assert len(p1.discard) == 1
-        field.process_payload(json.dumps({"indices":[0]}))
+        assert len(p1.discard) == 0
+        field.process_payload(json.dumps({"indices":[0,1]}))
         assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
         assert len(p1.discard) == 2
+    
+    def test_missing_keys(self):
+        p1_dict = [
+            "p1",{
+                "k1" : 1,
+                "k2" : 2,
+                "k3" : 2,
+                "k4" : 2
+            }
+        ]
+
+        p2_dict = [
+            "p2",{
+            }
+        ]
+        field = self.setup_game(p1_dict, p2_dict).field
+        field.DEBUG_SYMBOL_NO_EXCEPTION_HANDLING = True
+        p1 = field.players[0]
+        p1.draw(5)
+        field.start_turn()
+        with pytest.raises(core.exceptions.MissingPayloadKeys):
+            field.process_payload(json.dumps({"bong":[0,1,2,3]}))
+        field.process_payload(json.dumps({"indices":[0,1]}))

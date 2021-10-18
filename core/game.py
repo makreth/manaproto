@@ -5,7 +5,7 @@ import json
 from . import exceptions
 from .components import TokenGroup, CardSlot
 from .profile import PlayerProfile, DeckList
-from .validators import validate_discard, validate_payload_dict, validate_selector
+from .validators import validate_discard, validate_payload_dict, validate_card_selector
 
 
 class PlayerField:
@@ -29,8 +29,24 @@ class PlayerField:
             return False
         
     def discard_indices(self, hand_indices):
-        discarded = [self.hand.pop(ind) for ind in hand_indices]
-        self.discard += discarded
+        discarded = []
+        invalid = []
+        no_mod = False
+        for ind in hand_indices:
+            try:
+                num_ind = int(ind)
+                if num_ind < 0:
+                    raise IndexError
+                _ = self.hand[num_ind]
+                if not no_mod:
+                    discarded.append(self.hand.pop(num_ind))
+            except(ValueError, IndexError):
+                no_mod = True
+                invalid.append(ind)
+        if len(invalid) > 0:
+            raise exceptions.DiscardIndicesInvalidException(invalid)
+        else:
+            self.discard += discarded
         
     def discard_all(self):
         self.discard += self.hand
@@ -46,6 +62,9 @@ class PlayerField:
         return True
 
 class GameField:
+
+    DEBUG_SYMBOL_NO_EXCEPTION_HANDLING = False
+
     class ReceivingContexts(Enum):
         ACTIVE_PLAYER_FREE_FIELD = 1
         OPPOSING_PLAYER_RESPONSE = 2
@@ -91,11 +110,18 @@ class GameField:
             rc.OPPOSING_PLAYER_RESPONSE : self.execute_opp_response,
         }
     
-    #TODO: more payload validation
     def execute_active_play(self, start=None, end=None, type=None):
+        [validate_card_selector(sel) for sel in (start, end)]
+        for id_ in (start["id"], end["id"]):
+            if id_ != self.turn:
+                raise exceptions.PlayerOutOfTurnException(id_)
         self.play_card(start, end, type)
     
     def execute_opp_response(self, start=None, end=None, type=None):
+        [validate_card_selector(sel) for sel in (start, end)]
+        for id_ in (start["id"], end["id"]):
+            if id_ == self.turn:
+                raise exceptions.PlayerOutOfTurnException(id_)
         self.play_card(start, end, type)
     
     def execute_start_discard_on_active(self, indices=None):
@@ -113,8 +139,11 @@ class GameField:
         try:
             validate_payload_dict(dict_payload, self.KEYS_BY_CONTEXT[self.receiving_context])
             self.context_processing[self.receiving_context](**dict_payload)
-        except exceptions.BaseBoardException:
-            print("BaseBoardException handled.")
+        except exceptions.BaseBoardException as e:
+            if self.DEBUG_SYMBOL_NO_EXCEPTION_HANDLING:
+                raise e
+            else:
+                print("BaseBoardException handled.")
     
     def resolve_card_selectors(self, start_selector, end_selector, type):
         target_player = self.players[start_selector.player_id]

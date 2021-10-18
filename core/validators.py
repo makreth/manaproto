@@ -10,10 +10,10 @@ def validate_discard(player_field, indices):
 from .exceptions import MissingPayloadKeys
 
 def validate_payload_dict(payload_dict, key_set):
-    missing = [k for k in payload_dict.keys() if k not in key_set]
+    missing = [k for k in key_set if k not in payload_dict]
     if len(missing) > 0:
         raise MissingPayloadKeys(missing)
 
 selector_keys = {"id", "section", "index"}
-def validate_selector(selector_dict):
+def validate_card_selector(selector_dict):
     validate_payload_dict(selector_dict, selector_keys)

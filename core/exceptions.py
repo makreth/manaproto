@@ -7,11 +7,16 @@ class BaseBoardException(Exception):
 
 class MissingPayloadKeys(BaseBoardException):
     def __init__(self, missing_keys):
-        super().__init__(self, message=f"Payload rejected: payload is missing the following: {missing_keys}")
+        super().__init__(message=f"Payload rejected: payload is missing the following: {missing_keys}")
 
 class PlayerOutOfTurnException(BaseBoardException):
-    def __init__(self):
-        super().__init__("Payload rejected: player sending command cannot currently act.")
+    def __init__(self, player_id):
+        super().__init__(f"Payload rejected: player {player_id} sending command cannot currently act.")
+
+class DiscardIndicesInvalidException(BaseBoardException):
+    def __init__(self, indices):
+        super().__init__(f"Payload rejected: following indices are invalid: {indices}.")
+        self.invalid_indices = indices
 
 class DiscardTooManyException(BaseBoardException):
     def __init__(self):
