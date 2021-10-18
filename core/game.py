@@ -2,89 +2,11 @@ from random import randint
 from enum import Enum
 import json
 
-class TokenGroup:
-    def __init__(self, aer=0, gaia=0, hydro=0, ignis=0):
-        self.aer = 0
-        self.gaia = 0
-        self.hydro = 0
-        self.ignis = 0
-    
-    def __eq__(self, other):
-        return (self.aer, self.gaia, self.hydro, self.ignis) == (other.aer, other.gaia, other.hydro, other.ignis)
-    
-    def __iter__(self):
-        return (elem for elem in tuple(self.aer, self.gaia, self.hydro, self.ignis))
+from . import exceptions
+from .components import TokenGroup, CardSlot
+from .profile import PlayerProfile, DeckList
+from .validators import validate_discard
 
-class CardSlot:
-
-    class CardStates(Enum):
-
-        INACTIVE = 0
-        DOWN_LOCKED = 1
-        DOWN_PLAYABLE = 2
-        UP = 3
-        TAP = 4
-
-    CMD_ALIASES = {
-        "cast" : 2,
-        "set" : 1,
-        "tap" : 3 
-    }
-
-    def __init__(self, id, index):
-        self.side_id = id
-        self.index = index
-        self.card_name = None
-        self.form = self.CardStates.INACTIVE
-    
-    def pop(self):
-        res = self.card_name
-        self.card_name = None
-        self.form = self.CardStates.INACTIVE
-        return res
-    
-    @classmethod
-    def convert_cmd_type_to_card_state(cls, cmd_type):
-        return cls.CMD_ALIASES[cmd_type]
-
-    @property
-    def card_name(self):
-        return self._card_name
-
-    @property
-    def form(self):
-        return self._form
-    
-    @card_name.setter
-    def card_name(self, content_form_tuple):
-        if not content_form_tuple:
-            self._card_name = None
-            self.form = self.CardStates.INACTIVE
-        else:
-            self._card_name, self.form = content_form_tuple
-    
-    @form.setter
-    def form(self, new_state):
-        self._form = new_state
-    
-    def __eq__(self, other):
-        return self._card_name == other
-
-class DeckList:
-    def __init__(self, init_data = None):
-        if init_data:
-            self._data = init_data
-        else:
-            self._data = dict()
-
-    def insert_name_count_pair(self, card_name, count):
-        self._data[card_name] = count
-    
-    def get_count_from_name(self, card_name):
-        return self._data[card_name]
-    
-    def get_names(self):
-        return list(self._data.keys())
 
 class PlayerField:
     def __init__(self, id):
@@ -143,7 +65,6 @@ class GameField:
 
             assert id == 0 or id == 1
             assert section in self.POSSIBLE_SECTIONS
-
         
     MAX_HAND_SIZE = 3
     STARTING_DRAW = 3
@@ -163,10 +84,31 @@ class GameField:
             rc.ACTIVE_PLAYER_FREE_FIELD : self.execute_active_play,
             rc.OPPOSING_PLAYER_RESPONSE : self.execute_opp_response,
         }
+    
+    #TODO: more payload validation
+    def execute_active_play(self, start=None, end=None, type=None):
+        self.play_card(start, end, type)
+    
+    def execute_opp_response(self, start=None, end=None, type=None):
+        self.play_card(start, end, type)
+    
+    def execute_start_discard_on_active(self, indices=None):
+        acting_player = self.get_active_player()
+        try:
+            validate_discard(acting_player, indices)
+            acting_player.discard_indices(indices)
+            self.await_play()
+        except exceptions.DiscardTooFewException as e:
+            acting_player.discard_indices(indices)
+            raise e
 
     def process_payload(self, string_payload):
         dict_payload = json.loads(string_payload)
-        self.context_processing[self.receiving_context](**dict_payload)
+        try:
+            self.context_processing[self.receiving_context](**dict_payload)
+        except exceptions.DiscardTooFewException:
+            print("DiscardTooFew exception handled.")
+            self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
     
     def resolve_card_selectors(self, start_selector, end_selector, type):
         target_player = self.players[start_selector.player_id]
@@ -179,7 +121,8 @@ class GameField:
         
         dest_slot = target_player.slots[end_selector.index]
         form = CardSlot.convert_cmd_type_to_card_state(type)
-        dest_slot.card_name = card_to_play, form
+        dest_slot.card_name = card_to_play
+        dest_slot.form = form
         return dest_slot
     
     def play_card(self, start, end, type):
@@ -189,18 +132,6 @@ class GameField:
         if type == "cast":
             self.casting_queue.append(dest_slot)
             self.await_opposing_response()
-
-    #TODO: more payload validation
-    def execute_active_play(self, start=None, end=None, type=None):
-        self.play_card(start, end, type)
-    
-    def execute_opp_response(self, start=None, end=None, type=None):
-        self.play_card(start, end, type)
-    
-    def execute_start_discard_on_active(self, indices=None):
-        acting_player = self.get_active_player()
-        assert len(indices) <= len(acting_player.hand) - self.MAX_HAND_SIZE
-        acting_player.discard_indices(indices)
     
     def start_turn(self):
         acting_player = self.get_active_player()
@@ -224,7 +155,7 @@ class GameField:
         if self.receiving_context == self.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD or self.receiving_context == self.ReceivingContexts.ACTIVE_PLAYER_RESPONSE:
             self.receiving_context = self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE
         elif self.receiving_context == self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE:
-            self.receiving_context == self.receiving_context.ACTIVE_PLAYER_RESPONSE
+            self.receiving_context = self.receiving_context.ACTIVE_PLAYER_RESPONSE
     
     def get_active_player(self):
         return self.players[self.turn]
@@ -256,9 +187,3 @@ class Game:
             for _ in range(deck_list.get_count_from_name(card_name)):
                 new_player_field.deck.append(card_name)
         self.field.players[profile_num] = new_player_field
-
-class PlayerProfile:
-    def __init__(self):
-        self.name = ""
-        self.deck_list = DeckList()
-

@@ -1,6 +1,9 @@
-from core.game import Game, GameField, PlayerField, PlayerProfile, DeckList, TokenGroup
+from core.game import Game, GameField, PlayerField
+from core.profile import PlayerProfile, DeckList
+from core.components import TokenGroup
 import json
 import pytest
+
 
 class TestBoard:
 
@@ -89,6 +92,7 @@ class TestBoard:
         field.process_payload(json.dumps({"indices":[0]}))
         assert field.players[0].hand == ["d2", "d3", "d4"]
         assert field.players[0].discard == ["d1"]
+        assert field.receiving_context == GameField.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
     
     def test_active_loss_smoke(self):
         p1_dict = [
@@ -135,3 +139,29 @@ class TestBoard:
         assert field.players[0].hand == ["1a", "1a"]
         assert field.players[0].slots[1] == "play1"
         assert field.casting_queue[0].card_name == "play1"
+    
+    def test_discard_too_few(self):
+        p1_dict = [
+            "p1",{
+                "k1" : 1,
+                "k2" : 2,
+                "k3" : 2,
+                "k4" : 2
+            }
+        ]
+
+        p2_dict = [
+            "p2",{
+            }
+        ]
+        field = self.setup_game(p1_dict, p2_dict).field
+        p1 = field.players[0]
+        p1.draw(5)
+        field.start_turn()
+        assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
+        field.process_payload(json.dumps({"indices":[0]}))
+        assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
+        assert len(p1.discard) == 1
+        field.process_payload(json.dumps({"indices":[0]}))
+        assert field.receiving_context == field.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD
+        assert len(p1.discard) == 2
