@@ -5,7 +5,7 @@ import json
 from . import exceptions
 from .components import TokenGroup, CardSlot
 from .profile import PlayerProfile, DeckList
-from .validators import validate_discard
+from .validators import validate_discard, validate_payload_dict, validate_selector
 
 
 class PlayerField:
@@ -53,6 +53,12 @@ class GameField:
         ACTIVE_PLAYER_START_DISCARD = 4
         OPPOSING_PLAYER_LOST = 98
         ACTIVE_PLAYER_LOST = 99
+
+    KEYS_BY_CONTEXT = {
+        ReceivingContexts.ACTIVE_PLAYER_START_DISCARD : {"indices"},
+        ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD : {"start", "end", "type"},
+        ReceivingContexts.ACTIVE_PLAYER_RESPONSE : {"start", "end", "type"}
+    }
     
     class CardSelector:
 
@@ -105,10 +111,10 @@ class GameField:
     def process_payload(self, string_payload):
         dict_payload = json.loads(string_payload)
         try:
+            validate_payload_dict(dict_payload, self.KEYS_BY_CONTEXT[self.receiving_context])
             self.context_processing[self.receiving_context](**dict_payload)
-        except exceptions.DiscardTooFewException:
-            print("DiscardTooFew exception handled.")
-            self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_START_DISCARD
+        except exceptions.BaseBoardException:
+            print("BaseBoardException handled.")
     
     def resolve_card_selectors(self, start_selector, end_selector, type):
         target_player = self.players[start_selector.player_id]
@@ -155,7 +161,7 @@ class GameField:
         if self.receiving_context == self.ReceivingContexts.ACTIVE_PLAYER_FREE_FIELD or self.receiving_context == self.ReceivingContexts.ACTIVE_PLAYER_RESPONSE:
             self.receiving_context = self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE
         elif self.receiving_context == self.ReceivingContexts.OPPOSING_PLAYER_RESPONSE:
-            self.receiving_context = self.receiving_context.ACTIVE_PLAYER_RESPONSE
+            self.receiving_context = self.ReceivingContexts.ACTIVE_PLAYER_RESPONSE
     
     def get_active_player(self):
         return self.players[self.turn]
@@ -165,6 +171,7 @@ class GameField:
     
     def choose_first_player(self):
         self.turn = randint(0,1)
+        
 
 class Game:
 
